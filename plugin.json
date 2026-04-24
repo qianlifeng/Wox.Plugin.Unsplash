@@ -1,20 +1,198 @@
 {
-    "Id": "{{.Id}}",
-    "TriggerKeywords": [
-        "{{.TriggerKeyword}}"
-    ],
-    "Name": "{{.Name}}",
-    "Description": "{{.Description}}",
-    "Author": "{{.Author}}",
-    "Version": "0.0.1",
-    "MinWoxVersion": "2.0.0",
-    "Runtime": "python",
-    "Website": "{{.Website}}",
-    "Entry": "main.py",
-    "Icon": "relative:images/app.svg",
-    "SupportedOS": [
-        "windows",
-        "linux",
-        "darwin"
-    ]
+  "Id": "0057ebd4-1a85-4653-8bfa-d51557c0c7a1",
+  "TriggerKeywords": [
+    "unsplash",
+    "wallpaper"
+  ],
+  "Name": "i18n:plugin_name",
+  "Description": "i18n:plugin_description",
+  "Author": "qianlifeng",
+  "Version": "0.0.1",
+  "MinWoxVersion": "2.0.0",
+  "Runtime": "python",
+  "Website": "https://github.com/qianlifeng/Wox.Plugin.Unsplash",
+  "Entry": "main.py",
+  "Icon": "relative:images/app.png",
+  "SupportedOS": [
+    "windows",
+    "linux",
+    "darwin"
+  ],
+  "Features": [
+    {
+      "Name": "debounce",
+      "Params": {
+        "IntervalMs": 300
+      }
+    },
+    {
+      "Name": "gridLayout",
+      "Params": {
+        "Columns": 4,
+        "ShowTitle": false,
+        "ItemPadding": 10,
+        "ItemMargin": 5,
+        "Commands": []
+      }
+    }
+  ],
+  "SettingDefinitions": [
+    {
+      "Type": "textbox",
+      "Key": "access_key",
+      "Value": {
+        "Label": "i18n:setting_access_key_label",
+        "Tooltip": "i18n:setting_access_key_tooltip",
+        "DefaultValue": "",
+        "Validators": [
+          {
+            "Type": "not_empty",
+            "Value": {}
+          }
+        ],
+        "Style": {
+          "Width": 420
+        }
+      }
+    },
+    {
+      "Type": "textbox",
+      "Key": "results_per_page",
+      "Value": {
+        "Label": "i18n:setting_results_per_page_label",
+        "Tooltip": "i18n:setting_results_per_page_tooltip",
+        "DefaultValue": "12",
+        "Validators": [
+          {
+            "Type": "is_number",
+            "Value": {
+              "IsInteger": true,
+              "IsFloat": false
+            }
+          }
+        ],
+        "Style": {
+          "Width": 160
+        }
+      }
+    },
+    {
+      "Type": "select",
+      "Key": "orientation",
+      "Value": {
+        "Label": "i18n:setting_orientation_label",
+        "Tooltip": "i18n:setting_orientation_tooltip",
+        "DefaultValue": "landscape",
+        "Options": [
+          {
+            "Label": "i18n:orientation_landscape",
+            "Value": "landscape"
+          },
+          {
+            "Label": "i18n:orientation_portrait",
+            "Value": "portrait"
+          },
+          {
+            "Label": "i18n:orientation_squarish",
+            "Value": "squarish"
+          }
+        ]
+      }
+    },
+    {
+      "Type": "select",
+      "Key": "content_filter",
+      "Value": {
+        "Label": "i18n:setting_content_filter_label",
+        "Tooltip": "i18n:setting_content_filter_tooltip",
+        "DefaultValue": "low",
+        "Options": [
+          {
+            "Label": "i18n:content_filter_low",
+            "Value": "low"
+          },
+          {
+            "Label": "i18n:content_filter_high",
+            "Value": "high"
+          }
+        ]
+      }
+    },
+    {
+      "Type": "textbox",
+      "Key": "download_dir",
+      "IsPlatformSpecific": true,
+      "Value": {
+        "Label": "i18n:setting_download_dir_label",
+        "Tooltip": "i18n:setting_download_dir_tooltip",
+        "DefaultValue": ""
+      }
+    }
+  ],
+  "I18n": {
+    "en_US": {
+      "plugin_name": "Unsplash",
+      "plugin_description": "Search images on Unsplash and set them as wallpaper",
+      "setting_access_key_label": "Unsplash Access Key",
+      "setting_access_key_tooltip": "Get this from [https://unsplash.com/developers](https://unsplash.com/developers): sign in, create an application, open the app details, and copy Access Key. Keep it private.",
+      "setting_results_per_page_label": "Results per page",
+      "setting_results_per_page_tooltip": "Number of Unsplash photos to show, from 1 to 30.",
+      "setting_orientation_label": "Orientation",
+      "setting_orientation_tooltip": "Preferred Unsplash photo orientation.",
+      "orientation_landscape": "Landscape",
+      "orientation_portrait": "Portrait",
+      "orientation_squarish": "Squarish",
+      "setting_content_filter_label": "Content filter",
+      "setting_content_filter_tooltip": "Unsplash content safety filter.",
+      "content_filter_low": "Low",
+      "content_filter_high": "High",
+      "setting_download_dir_label": "Download directory",
+      "setting_download_dir_tooltip": "Optional. Leave empty to use the platform cache directory.",
+      "group_latest_wallpapers": "Latest wallpapers",
+      "group_popular_wallpapers": "Popular wallpapers",
+      "action_set_wallpaper": "Set as wallpaper",
+      "action_open_unsplash": "Open on Unsplash",
+      "result_access_key_title": "Set Unsplash Access Key",
+      "result_access_key_subtitle": "Open Unsplash Developers, create an app, then paste the Access Key in plugin settings.",
+      "result_access_key_preview": "Unsplash Access Key is required.\n\n1. Open https://unsplash.com/developers.\n2. Sign in or create an Unsplash account.\n3. Create a new application.\n4. Open the application details and copy the Access Key.\n5. Paste it into this plugin's access_key setting.\n\nDo not commit or share your Access Key.",
+      "result_use_search_command_title": "Use the search command",
+      "result_use_search_command_subtitle": "Type unsplash search ocean to search Unsplash wallpapers.",
+      "result_search_title": "Search Unsplash",
+      "result_search_subtitle": "Type a keyword after search, such as unsplash search ocean.",
+      "result_featured_loading_title": "Featured wallpapers are loading",
+      "result_featured_loading_subtitle": "The Unsplash wallpapers cache is empty. It refreshes in the background; try again in a few seconds."
+    },
+    "zh_CN": {
+      "plugin_name": "Unsplash 壁纸",
+      "plugin_description": "搜索 Unsplash 图片并设置为桌面壁纸",
+      "setting_access_key_label": "Unsplash Access Key",
+      "setting_access_key_tooltip": "从 [https://unsplash.com/developers](https://unsplash.com/developers) 获取：登录后创建应用，打开应用详情，复制 Access Key。请勿分享或提交该密钥。",
+      "setting_results_per_page_label": "每页结果数",
+      "setting_results_per_page_tooltip": "显示的 Unsplash 图片数量，范围 1 到 30。",
+      "setting_orientation_label": "图片方向",
+      "setting_orientation_tooltip": "首选 Unsplash 图片方向。",
+      "orientation_landscape": "横向",
+      "orientation_portrait": "纵向",
+      "orientation_squarish": "方形",
+      "setting_content_filter_label": "内容过滤",
+      "setting_content_filter_tooltip": "Unsplash 内容安全过滤级别。",
+      "content_filter_low": "低",
+      "content_filter_high": "高",
+      "setting_download_dir_label": "下载目录",
+      "setting_download_dir_tooltip": "可选。留空时使用系统缓存目录。",
+      "group_latest_wallpapers": "最新壁纸",
+      "group_popular_wallpapers": "最受欢迎壁纸",
+      "action_set_wallpaper": "设置为壁纸",
+      "action_open_unsplash": "在 Unsplash 打开",
+      "result_access_key_title": "配置 Unsplash Access Key",
+      "result_access_key_subtitle": "打开 Unsplash Developers 创建应用，然后把 Access Key 填入插件设置。",
+      "result_access_key_preview": "需要配置 Unsplash Access Key。\n\n1. 打开 https://unsplash.com/developers。\n2. 登录或注册 Unsplash 账号。\n3. 创建一个新的应用。\n4. 打开应用详情并复制 Access Key。\n5. 将它粘贴到本插件的 access_key 设置中。\n\n请勿提交或分享你的 Access Key。",
+      "result_use_search_command_title": "请使用 search 命令",
+      "result_use_search_command_subtitle": "输入 unsplash search ocean 来搜索 Unsplash 壁纸。",
+      "result_search_title": "搜索 Unsplash",
+      "result_search_subtitle": "请在 search 后输入关键词，例如 unsplash search ocean。",
+      "result_featured_loading_title": "精选壁纸正在加载",
+      "result_featured_loading_subtitle": "Unsplash 壁纸缓存为空。插件会在后台刷新，请稍后再试。"
+    }
+  }
 }

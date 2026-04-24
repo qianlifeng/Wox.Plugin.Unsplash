@@ -1,5 +1,5 @@
 [project]
-name = "wox-plugin-template-python"
+name = "wox-plugin-unsplash"
 version = "0.0.1"
 readme = "README.md"
 requires-python = ">=3.10"
