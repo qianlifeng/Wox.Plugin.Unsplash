@@ -1,4 +1,5 @@
 import json
+import string
 import unittest
 from pathlib import Path
 
@@ -22,6 +23,16 @@ class TestManifestI18n(unittest.TestCase):
             self.assertIn("action_set_wallpaper", i18n[locale])
             self.assertIn("group_latest_wallpapers", i18n[locale])
             self.assertIn("result_access_key_title", i18n[locale])
+
+    def test_manifest_translation_locales_have_matching_keys_and_placeholders(self):
+        i18n = self.manifest["I18n"]
+        self.assertEqual(set(i18n["en_US"]), set(i18n["zh_CN"]))
+
+        formatter = string.Formatter()
+        for key, english in i18n["en_US"].items():
+            english_fields = {field_name for _, field_name, _, _ in formatter.parse(english) if field_name}
+            chinese_fields = {field_name for _, field_name, _, _ in formatter.parse(i18n["zh_CN"][key]) if field_name}
+            self.assertEqual(english_fields, chinese_fields, key)
 
     def test_settings_use_i18n_labels_and_tooltips(self):
         for setting in self.manifest["SettingDefinitions"]:

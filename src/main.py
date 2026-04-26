@@ -20,6 +20,7 @@ from wox_plugin import (
     Query,
     Result,
     ResultAction,
+    ToolbarMsg,
     WoxImage,
     WoxPreview,
     WoxPreviewType,
@@ -263,11 +264,17 @@ class UnsplashPlugin(Plugin):
         command = query.command.strip().lower()
         if command != "search":
             if query.search.strip():
-                return [self._message_result("i18n:result_use_search_command_title", "i18n:result_use_search_command_subtitle")]
-            return self._cached_featured_wallpaper_results()
+                return [
+                    await self._localized_message_result(
+                        ctx,
+                        "result_use_search_command_title",
+                        "result_use_search_command_subtitle",
+                    )
+                ]
+            return await self._cached_featured_wallpaper_results(ctx)
 
         if not search_text:
-            return [self._message_result("i18n:result_search_title", "i18n:result_search_subtitle")]
+            return [await self._localized_message_result(ctx, "result_search_title", "result_search_subtitle")]
 
         try:
             photos = await self.client.search_photos(
@@ -278,25 +285,39 @@ class UnsplashPlugin(Plugin):
                 content_filter=await self._choice_setting(ctx, "content_filter", "low", VALID_CONTENT_FILTERS),
             )
         except UnsplashAPIError as error:
-            return [self._api_error_result(error)]
+            return [await self._api_error_result(ctx, error)]
 
         if not photos:
-            return [self._message_result("No Unsplash photos found", f"No results for '{search_text}'.")]
-
-        return [self._photo_result(photo) for photo in photos]
-
-    def _cached_featured_wallpaper_results(self) -> list[Result]:
-        if not self.latest_wallpapers and not self.popular_wallpapers:
             return [
-                self._message_result(
-                    "i18n:result_featured_loading_title",
-                    "i18n:result_featured_loading_subtitle",
+                await self._localized_message_result(
+                    ctx,
+                    "result_no_photos_found_title",
+                    "result_no_photos_found_subtitle",
+                    query=search_text,
                 )
             ]
 
-        results = [self._photo_result(photo, group="i18n:group_latest_wallpapers", group_score=200) for photo in self.latest_wallpapers]
+        return [await self._photo_result(ctx, photo) for photo in photos]
+
+    async def _cached_featured_wallpaper_results(self, ctx: Context) -> list[Result]:
+        if not self.latest_wallpapers and not self.popular_wallpapers:
+            return [
+                await self._localized_message_result(
+                    ctx,
+                    "result_featured_loading_title",
+                    "result_featured_loading_subtitle",
+                )
+            ]
+
+        results = [
+            await self._photo_result(ctx, photo, group="i18n:group_latest_wallpapers", group_score=200)
+            for photo in self.latest_wallpapers
+        ]
         results.extend(
-            self._photo_result(photo, group="i18n:group_popular_wallpapers", group_score=100) for photo in self.popular_wallpapers
+            [
+                await self._photo_result(ctx, photo, group="i18n:group_popular_wallpapers", group_score=100)
+                for photo in self.popular_wallpapers
+            ]
         )
         return results
 
@@ -345,24 +366,25 @@ class UnsplashPlugin(Plugin):
         value = (await self.api.get_setting(ctx, key)).strip().lower()
         return value if value in allowed else default
 
-    def _photo_result(self, photo: dict[str, Any], group: str = "", group_score: float = 0) -> Result:
+    async def _photo_result(self, ctx: Context, photo: dict[str, Any], group: str = "", group_score: float = 0) -> Result:
         photo_id = str(photo.get("id", ""))
         urls = self._dict(photo.get("urls"))
         links = self._dict(photo.get("links"))
         user = self._dict(photo.get("user"))
         user_links = self._dict(user.get("links"))
-        photographer = str(user.get("name") or "Unsplash photographer")
-        description = str(photo.get("description") or photo.get("alt_description") or "Unsplash photo")
+        photographer = str(user.get("name") or await self._translation(ctx, "result_photo_default_photographer"))
+        description = str(photo.get("description") or photo.get("alt_description") or await self._translation(ctx, "result_photo_default_title"))
         thumb_url = str(urls.get("thumb") or urls.get("regular") or urls.get("full") or "")
         regular_url = str(urls.get("regular") or urls.get("full") or thumb_url)
         full_url = str(urls.get("full") or regular_url)
         photo_url = str(links.get("html") or "")
         download_location = str(links.get("download_location") or "")
+        subtitle = await self._translation(ctx, "result_photo_attribution", photographer=photographer)
 
         return Result(
             id=photo_id,
             title=description,
-            sub_title=f"Photo by {photographer} on Unsplash",
+            sub_title=subtitle,
             icon=WoxImage.new_url(thumb_url) if thumb_url else WoxImage.new_relative("images/app.png"),
             preview=WoxPreview(preview_type=WoxPreviewType.IMAGE, preview_data=f"url:{regular_url}"),
             score=100,
@@ -373,6 +395,7 @@ class UnsplashPlugin(Plugin):
                     name="i18n:action_set_wallpaper",
                     icon=WoxImage.new_relative("images/app.png"),
                     is_default=True,
+                    prevent_hide_after_action=True,
                     action=self.set_wallpaper,
                     context_data={
                         "id": photo_id,
@@ -398,20 +421,58 @@ class UnsplashPlugin(Plugin):
         download_location = action_context.context_data.get("download_location", "")
         photo_id = action_context.context_data.get("id", "unsplash")
         if not access_key or not full_url:
-            await self.api.notify(ctx, "Unsplash photo data is incomplete. Please search again.")
+            await self.api.notify(ctx, await self._translation(ctx, "notify_photo_data_incomplete"))
             return
 
         directory = await self._download_dir(ctx)
         filename = f"{photo_id}.jpg"
+        toolbar_msg_id = f"unsplash-wallpaper-{photo_id or 'current'}"
         try:
+            await self._show_wallpaper_status(
+                ctx,
+                toolbar_msg_id,
+                await self._translation(ctx, "toolbar_downloading_wallpaper"),
+                progress=10,
+                indeterminate=True,
+            )
             await self.client.track_download(access_key, download_location)
             image_path = await self.downloader.download(access_key, full_url, directory, filename)
+            await self._show_wallpaper_status(
+                ctx,
+                toolbar_msg_id,
+                await self._translation(ctx, "toolbar_setting_wallpaper"),
+                progress=75,
+                indeterminate=True,
+            )
             await asyncio.to_thread(self.wallpaper_setter, image_path)
         except Exception as error:
-            await self.api.notify(ctx, f"Failed to set wallpaper: {error}")
+            message = await self._translation(ctx, "toolbar_failed_set_wallpaper", error=error)
+            await self._show_wallpaper_status(ctx, toolbar_msg_id, message, progress=100)
+            await self.api.notify(ctx, message)
             return
 
-        await self.api.notify(ctx, f"Wallpaper updated: {image_path}")
+        await self.api.clear_toolbar_msg(ctx, toolbar_msg_id)
+        await self.api.notify(ctx, await self._translation(ctx, "notify_wallpaper_updated"))
+
+    async def _show_wallpaper_status(
+        self,
+        ctx: Context,
+        toolbar_msg_id: str,
+        title: str,
+        *,
+        progress: int,
+        indeterminate: bool = False,
+    ) -> None:
+        await self.api.show_toolbar_msg(
+            ctx,
+            ToolbarMsg(
+                id=toolbar_msg_id,
+                title=title,
+                icon=WoxImage.new_relative("images/app.png"),
+                progress=progress,
+                indeterminate=indeterminate,
+            ),
+        )
 
     async def open_unsplash(self, _ctx: Context, action_context: ActionContext) -> None:
         url = action_context.context_data.get("photo_url") or action_context.context_data.get("photographer_url")
@@ -432,14 +493,21 @@ class UnsplashPlugin(Plugin):
             score=100,
         )
 
-    def _api_error_result(self, error: UnsplashAPIError) -> Result:
+    async def _api_error_result(self, ctx: Context, error: UnsplashAPIError) -> Result:
         messages = {
-            401: "Unsplash Access Key is invalid. Copy the Access Key from your Unsplash application details.",
-            403: "Unsplash rejected the request because this key does not have permission or is restricted.",
-            429: "Unsplash rate limit reached. Demo mode keys have a low hourly limit.",
+            401: "api_error_invalid_key",
+            403: "api_error_forbidden",
+            429: "api_error_rate_limited",
         }
-        message = messages.get(error.status_code, f"Unsplash request failed: {error}")
-        return self._message_result("Unsplash API error", message)
+        message_key = messages.get(error.status_code, "api_error_generic")
+        message = await self._translation(ctx, message_key, error=error)
+        return self._message_result(await self._translation(ctx, "api_error_title"), message)
+
+    async def _localized_message_result(self, ctx: Context, title_key: str, subtitle_key: str, **values: Any) -> Result:
+        return self._message_result(
+            await self._translation(ctx, title_key, **values),
+            await self._translation(ctx, subtitle_key, **values),
+        )
 
     def _message_result(self, title: str, subtitle: str) -> Result:
         return Result(
@@ -450,11 +518,11 @@ class UnsplashPlugin(Plugin):
             score=100,
         )
 
-    async def _translation(self, ctx: Context, key: str) -> str:
+    async def _translation(self, ctx: Context, key: str, **values: Any) -> str:
         value = await self.api.get_translation(ctx, key)
         if value and value != key:
-            return value
-        return key
+            return value.format(**values) if values else value
+        return key.format(**values) if values else key
 
     def _dict(self, value: Any) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}

@@ -10,6 +10,10 @@ from wox_plugin import ActionContext, Context, PluginInitParams, Query, QueryEnv
 from src.main import UnsplashAPIError, UnsplashClient, UnsplashPlugin, set_wallpaper_for_platform
 
 
+ROOT = Path(__file__).resolve().parents[1]
+PLUGIN_I18N = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["I18n"]
+
+
 class FakeResponse:
     def __init__(self, body):
         self.body = body
@@ -25,32 +29,26 @@ class FakeResponse:
 
 
 class FakeAPI:
-    def __init__(self, settings=None):
+    def __init__(self, settings=None, locale="en_US"):
         self.settings = settings or {}
         self.notifications = []
+        self.toolbar_messages = []
+        self.cleared_toolbar_messages = []
         self.commands = []
         self.changed_queries = []
-        self.translations = {
-            "result_access_key_preview": "\n".join(
-                [
-                    "Unsplash Access Key is required.",
-                    "",
-                    "1. Open https://unsplash.com/developers.",
-                    "2. Sign in or create an Unsplash account.",
-                    "3. Create a new application.",
-                    "4. Open the application details and copy the Access Key.",
-                    "5. Paste it into this plugin's access_key setting.",
-                    "",
-                    "Do not commit or share your Access Key.",
-                ]
-            )
-        }
+        self.translations = dict(PLUGIN_I18N[locale])
 
     async def get_setting(self, _ctx, key):
         return self.settings.get(key, "")
 
     async def notify(self, _ctx, message):
         self.notifications.append(message)
+
+    async def show_toolbar_msg(self, _ctx, msg):
+        self.toolbar_messages.append(msg)
+
+    async def clear_toolbar_msg(self, _ctx, toolbar_msg_id):
+        self.cleared_toolbar_messages.append(toolbar_msg_id)
 
     async def on_setting_changed(self, _ctx, _callback):
         return None
@@ -211,7 +209,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(client.search_calls, [])
         self.assertEqual(client.topic_calls, [])
-        self.assertEqual(results[0].title, "i18n:result_featured_loading_title")
+        self.assertEqual(results[0].title, "Featured wallpapers are loading")
 
     async def test_refresh_featured_wallpaper_cache_uses_latest_and_popular_wallpapers_topics(self):
         client = FakeUnsplashClient([sample_photo()])
@@ -298,6 +296,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.preview.preview_data, "url:https://images.unsplash.com/regular.jpg")
         self.assertEqual([action.name for action in result.actions], ["i18n:action_set_wallpaper", "i18n:action_open_unsplash"])
         self.assertTrue(result.actions[0].is_default)
+        self.assertTrue(result.actions[0].prevent_hide_after_action)
 
     async def test_api_errors_return_specific_user_messages(self):
         for status, expected in ((401, "invalid"), (403, "permission"), (429, "rate limit")):
@@ -311,6 +310,16 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
 
             self.assertIn(expected, results[0].sub_title.lower())
 
+    async def test_search_empty_results_uses_chinese_translations(self):
+        plugin = UnsplashPlugin(client=FakeUnsplashClient([]))
+        api = FakeAPI({"access_key": "abc123"}, locale="zh_CN")
+        await plugin.init(Context.new(), PluginInitParams(api=api, plugin_directory="."))
+
+        results = await plugin.query(Context.new(), make_command_query("search", "海边"))
+
+        self.assertEqual(results[0].title, "未找到 Unsplash 图片")
+        self.assertEqual(results[0].sub_title, "没有找到“海边”的相关结果。")
+
     async def test_plain_text_after_trigger_does_not_search(self):
         client = FakeUnsplashClient([sample_photo()])
         plugin = UnsplashPlugin(client=client)
@@ -320,7 +329,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
         results = await plugin.query(Context.new(), make_query("ocean"))
 
         self.assertEqual(client.search_calls, [])
-        self.assertEqual(results[0].sub_title, "i18n:result_use_search_command_subtitle")
+        self.assertEqual(results[0].sub_title, "Type unsplash search ocean to search Unsplash wallpapers.")
 
     async def test_set_wallpaper_action_tracks_download_before_downloading(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -350,6 +359,12 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(downloader.calls[0][1], "https://images.unsplash.com/full.jpg")
             wallpaper.assert_called_once_with(output_path)
             self.assertIn("Wallpaper updated", api.notifications[-1])
+            self.assertEqual([message.id for message in api.toolbar_messages], ["unsplash-wallpaper-photo-1"] * 2)
+            self.assertEqual(
+                [message.title for message in api.toolbar_messages],
+                ["Downloading wallpaper...", "Setting wallpaper..."],
+            )
+            self.assertEqual(api.cleared_toolbar_messages, ["unsplash-wallpaper-photo-1"])
 
 
 class TestUnsplashClient(unittest.IsolatedAsyncioTestCase):

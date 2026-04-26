@@ -177,7 +177,22 @@
       "result_search_title": "Search Unsplash",
       "result_search_subtitle": "Type a keyword after search, such as unsplash search ocean.",
       "result_featured_loading_title": "Featured wallpapers are loading",
-      "result_featured_loading_subtitle": "The Unsplash wallpapers cache is empty. It refreshes in the background; try again in a few seconds."
+      "result_featured_loading_subtitle": "The Unsplash wallpapers cache is empty. It refreshes in the background; try again in a few seconds.",
+      "result_no_photos_found_title": "No Unsplash photos found",
+      "result_no_photos_found_subtitle": "No results for '{query}'.",
+      "result_photo_attribution": "Photo by {photographer} on Unsplash",
+      "result_photo_default_photographer": "Unsplash photographer",
+      "result_photo_default_title": "Unsplash photo",
+      "notify_photo_data_incomplete": "Unsplash photo data is incomplete. Please search again.",
+      "toolbar_downloading_wallpaper": "Downloading wallpaper...",
+      "toolbar_setting_wallpaper": "Setting wallpaper...",
+      "toolbar_failed_set_wallpaper": "Failed to set wallpaper: {error}",
+      "notify_wallpaper_updated": "Wallpaper updated",
+      "api_error_title": "Unsplash API error",
+      "api_error_invalid_key": "Unsplash Access Key is invalid. Copy the Access Key from your Unsplash application details.",
+      "api_error_forbidden": "Unsplash rejected the request because this key does not have permission or is restricted.",
+      "api_error_rate_limited": "Unsplash rate limit reached. Demo mode keys have a low hourly limit.",
+      "api_error_generic": "Unsplash request failed: {error}"
     },
     "zh_CN": {
       "plugin_name": "Unsplash 壁纸",
@@ -210,7 +225,22 @@
       "result_search_title": "搜索 Unsplash",
       "result_search_subtitle": "请在 search 后输入关键词，例如 unsplash search ocean。",
       "result_featured_loading_title": "精选壁纸正在加载",
-      "result_featured_loading_subtitle": "Unsplash 壁纸缓存为空。插件会在后台刷新，请稍后再试。"
+      "result_featured_loading_subtitle": "Unsplash 壁纸缓存为空。插件会在后台刷新，请稍后再试。",
+      "result_no_photos_found_title": "未找到 Unsplash 图片",
+      "result_no_photos_found_subtitle": "没有找到“{query}”的相关结果。",
+      "result_photo_attribution": "摄影师：{photographer}，来自 Unsplash",
+      "result_photo_default_photographer": "Unsplash 摄影师",
+      "result_photo_default_title": "Unsplash 图片",
+      "notify_photo_data_incomplete": "Unsplash 图片数据不完整，请重新搜索。",
+      "toolbar_downloading_wallpaper": "正在下载壁纸...",
+      "toolbar_setting_wallpaper": "正在设置壁纸...",
+      "toolbar_failed_set_wallpaper": "设置壁纸失败：{error}",
+      "notify_wallpaper_updated": "壁纸已更新",
+      "api_error_title": "Unsplash API 错误",
+      "api_error_invalid_key": "Unsplash Access Key 无效。请从 Unsplash 应用详情中复制 Access Key。",
+      "api_error_forbidden": "Unsplash 拒绝了请求，因为该密钥没有权限或受到了限制。",
+      "api_error_rate_limited": "已达到 Unsplash 请求频率限制。Demo 模式密钥的每小时额度较低。",
+      "api_error_generic": "Unsplash 请求失败：{error}"
     }
   }
 }
