@@ -36,11 +36,27 @@
       }
     }
   ],
+  "QueryRequirements": {
+    "AnyQuery": [
+      {
+        "SettingKey": "access_key",
+        "Validators": [
+          {
+            "Type": "not_empty",
+            "Value": {}
+          }
+        ],
+        "Message": "i18n:query_requirement_access_key_required"
+      }
+    ],
+    "QueryWithoutCommand": [],
+    "QueryWithCommand": {}
+  },
   "SettingDefinitions": [
     {
       "Type": "textbox",
-      "Key": "access_key",
       "Value": {
+        "Key": "access_key",
         "Label": "i18n:setting_access_key_label",
         "Tooltip": "i18n:setting_access_key_tooltip",
         "DefaultValue": "",
@@ -57,8 +73,8 @@
     },
     {
       "Type": "textbox",
-      "Key": "results_per_page",
       "Value": {
+        "Key": "results_per_page",
         "Label": "i18n:setting_results_per_page_label",
         "Tooltip": "i18n:setting_results_per_page_tooltip",
         "DefaultValue": "12",
@@ -78,8 +94,8 @@
     },
     {
       "Type": "select",
-      "Key": "orientation",
       "Value": {
+        "Key": "orientation",
         "Label": "i18n:setting_orientation_label",
         "Tooltip": "i18n:setting_orientation_tooltip",
         "DefaultValue": "landscape",
@@ -101,8 +117,8 @@
     },
     {
       "Type": "select",
-      "Key": "content_filter",
       "Value": {
+        "Key": "content_filter",
         "Label": "i18n:setting_content_filter_label",
         "Tooltip": "i18n:setting_content_filter_tooltip",
         "DefaultValue": "low",
@@ -120,9 +136,9 @@
     },
     {
       "Type": "textbox",
-      "Key": "download_dir",
       "IsPlatformSpecific": true,
       "Value": {
+        "Key": "download_dir",
         "Label": "i18n:setting_download_dir_label",
         "Tooltip": "i18n:setting_download_dir_tooltip",
         "DefaultValue": ""
@@ -155,6 +171,7 @@
       "result_access_key_title": "Set Unsplash Access Key",
       "result_access_key_subtitle": "Open Unsplash Developers, create an app, then paste the Access Key in plugin settings.",
       "result_access_key_preview": "Unsplash Access Key is required.\n\n1. Open https://unsplash.com/developers.\n2. Sign in or create an Unsplash account.\n3. Create a new application.\n4. Open the application details and copy the Access Key.\n5. Paste it into this plugin's access_key setting.\n\nDo not commit or share your Access Key.",
+      "query_requirement_access_key_required": "Unsplash Access Key is required before searching wallpapers.",
       "result_use_search_command_title": "Use the search command",
       "result_use_search_command_subtitle": "Type unsplash search ocean to search Unsplash wallpapers.",
       "result_search_title": "Search Unsplash",
@@ -187,6 +204,7 @@
       "result_access_key_title": "配置 Unsplash Access Key",
       "result_access_key_subtitle": "打开 Unsplash Developers 创建应用，然后把 Access Key 填入插件设置。",
       "result_access_key_preview": "需要配置 Unsplash Access Key。\n\n1. 打开 https://unsplash.com/developers。\n2. 登录或注册 Unsplash 账号。\n3. 创建一个新的应用。\n4. 打开应用详情并复制 Access Key。\n5. 将它粘贴到本插件的 access_key 设置中。\n\n请勿提交或分享你的 Access Key。",
+      "query_requirement_access_key_required": "搜索壁纸前需要先配置 Unsplash Access Key。",
       "result_use_search_command_title": "请使用 search 命令",
       "result_use_search_command_subtitle": "输入 unsplash search ocean 来搜索 Unsplash 壁纸。",
       "result_search_title": "搜索 Unsplash",
