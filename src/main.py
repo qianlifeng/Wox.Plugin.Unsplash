@@ -310,8 +310,7 @@ class UnsplashPlugin(Plugin):
             ]
 
         results = [
-            await self._photo_result(ctx, photo, group="i18n:group_latest_wallpapers", group_score=200)
-            for photo in self.latest_wallpapers
+            await self._photo_result(ctx, photo, group="i18n:group_latest_wallpapers", group_score=200) for photo in self.latest_wallpapers
         ]
         results.extend(
             [
@@ -373,7 +372,9 @@ class UnsplashPlugin(Plugin):
         user = self._dict(photo.get("user"))
         user_links = self._dict(user.get("links"))
         photographer = str(user.get("name") or await self._translation(ctx, "result_photo_default_photographer"))
-        description = str(photo.get("description") or photo.get("alt_description") or await self._translation(ctx, "result_photo_default_title"))
+        description = str(
+            photo.get("description") or photo.get("alt_description") or await self._translation(ctx, "result_photo_default_title")
+        )
         thumb_url = str(urls.get("thumb") or urls.get("regular") or urls.get("full") or "")
         regular_url = str(urls.get("regular") or urls.get("full") or thumb_url)
         full_url = str(urls.get("full") or regular_url)

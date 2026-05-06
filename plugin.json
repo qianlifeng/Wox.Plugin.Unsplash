@@ -8,7 +8,7 @@
   "Description": "i18n:plugin_description",
   "Author": "qianlifeng",
   "Version": "0.0.1",
-  "MinWoxVersion": "2.0.0",
+  "MinWoxVersion": "2.0.3",
   "Runtime": "python",
   "Website": "https://github.com/qianlifeng/Wox.Plugin.Unsplash",
   "Entry": "main.py",
@@ -30,8 +30,8 @@
       "Params": {
         "Columns": 4,
         "ShowTitle": false,
-        "ItemPadding": 10,
         "ItemMargin": 5,
+        "AspectRatio": 1.7777778,
         "Commands": []
       }
     }
