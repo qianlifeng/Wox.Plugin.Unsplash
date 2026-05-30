@@ -3,7 +3,7 @@ name = "wox-plugin-unsplash"
 version = "0.0.1"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["wox-plugin==0.0.80"]
+dependencies = ["wox-plugin==0.0.81"]
 
 [project.optional-dependencies]
 dev = ["ruff", "mypy"]
