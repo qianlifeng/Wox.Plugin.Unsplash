@@ -7,8 +7,8 @@
   "Name": "i18n:plugin_name",
   "Description": "i18n:plugin_description",
   "Author": "qianlifeng",
-  "Version": "0.0.1",
-  "MinWoxVersion": "2.0.3",
+  "Version": "0.0.2",
+  "MinWoxVersion": "2.4.5",
   "Runtime": "python",
   "Website": "https://github.com/qianlifeng/Wox.Plugin.Unsplash",
   "Entry": "main.py",
@@ -23,16 +23,6 @@
       "Name": "debounce",
       "Params": {
         "IntervalMs": 300
-      }
-    },
-    {
-      "Name": "gridLayout",
-      "Params": {
-        "Columns": 4,
-        "ShowTitle": false,
-        "ItemMargin": 5,
-        "AspectRatio": 1.7777778,
-        "Commands": []
       }
     }
   ],
@@ -192,7 +182,10 @@
       "api_error_invalid_key": "Unsplash Access Key is invalid. Copy the Access Key from your Unsplash application details.",
       "api_error_forbidden": "Unsplash rejected the request because this key does not have permission or is restricted.",
       "api_error_rate_limited": "Unsplash rate limit reached. Demo mode keys have a low hourly limit.",
-      "api_error_generic": "Unsplash request failed: {error}"
+      "api_error_generic": "Unsplash request failed: {error}",
+      "query_keywords_placeholder": "Keywords, e.g. ocean",
+      "tool_search_photos_description": "Search Unsplash photos. Returns photo metadata and URLs; omitted filters use plugin settings. Requires an Access Key.",
+      "tool_set_wallpaper_description": "Download an Unsplash photo by ID, track the download and change the desktop wallpaper. Requires an Access Key. Returns the local image path."
     },
     "zh_CN": {
       "plugin_name": "Unsplash 壁纸",
@@ -240,7 +233,26 @@
       "api_error_invalid_key": "Unsplash Access Key 无效。请从 Unsplash 应用详情中复制 Access Key。",
       "api_error_forbidden": "Unsplash 拒绝了请求，因为该密钥没有权限或受到了限制。",
       "api_error_rate_limited": "已达到 Unsplash 请求频率限制。Demo 模式密钥的每小时额度较低。",
-      "api_error_generic": "Unsplash 请求失败：{error}"
+      "api_error_generic": "Unsplash 请求失败：{error}",
+      "query_keywords_placeholder": "关键词，例如 ocean",
+      "tool_search_photos_description": "搜索 Unsplash 图片，返回图片信息和链接；未指定的过滤条件使用插件设置。需要配置 Access Key。",
+      "tool_set_wallpaper_description": "根据 Unsplash 图片 ID 下载图片、记录下载并设置桌面壁纸，返回本地图片路径。需要配置 Access Key。"
     }
-  }
+  },
+  "Commands": [
+    {
+      "Command": "search",
+      "Description": "i18n:result_search_subtitle",
+      "QueryHint": {
+        "Elements": [
+          {
+            "Id": "keywords",
+            "Kind": "argument",
+            "Placeholder": "i18n:query_keywords_placeholder",
+            "Required": true
+          }
+        ]
+      }
+    }
+  ]
 }

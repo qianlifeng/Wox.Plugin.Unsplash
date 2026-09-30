@@ -16,8 +16,21 @@ from wox_plugin import (
     Context,
     Plugin,
     PluginInitParams,
+    InvokePluginToolHandlerOption,
+    InvokePluginToolHandlerResult,
+    PluginToolAnnotations,
+    PluginToolDescriptor,
+    PluginToolError,
     PublicAPI,
     Query,
+    QueryGridLayout,
+    QueryLayout,
+    QueryRefinement,
+    QueryRefinementOption,
+    QueryRefinementType,
+    QueryResponse,
+    RefreshQueryParam,
+    RegisterPluginToolOption,
     Result,
     ResultAction,
     ToolbarMsg,
@@ -94,6 +107,12 @@ class UnsplashClient:
             return
         await self._request_json(download_location, access_key, {})
 
+    async def get_photo(self, access_key: str, photo_id: str) -> dict[str, Any]:
+        data = await self._request_json(f"https://api.unsplash.com/photos/{urllib.parse.quote(photo_id, safe='')}", access_key, {})
+        if not isinstance(data, dict):
+            raise UnsplashAPIError(0, "Unsplash returned invalid photo data")
+        return data
+
     async def _request_json(self, url: str, access_key: str, params: dict[str, str]) -> Any:
         request_url = url
         if params:
@@ -116,6 +135,8 @@ class UnsplashClient:
                 raise UnsplashAPIError(error.code, error.reason) from error
             except urllib.error.URLError as error:
                 raise UnsplashAPIError(0, str(error.reason)) from error
+            except OSError as error:
+                raise UnsplashAPIError(0, str(error)) from error
 
             try:
                 parsed = json.loads(raw)
@@ -243,10 +264,14 @@ class UnsplashPlugin(Plugin):
         self.latest_wallpapers: list[dict[str, Any]] = []
         self.popular_wallpapers: list[dict[str, Any]] = []
         self.featured_refresh_task: asyncio.Task[None] | None = None
+        self.featured_error: UnsplashAPIError | None = None
+        self.featured_loaded = False
+        self.featured_query_ctx: Context | None = None
 
     async def init(self, ctx: Context, init_params: PluginInitParams) -> None:
         self.api = init_params.api
         await self.api.on_setting_changed(ctx, self._on_setting_changed)
+        await self._register_tools(ctx)
         if self.start_background_refresh and self.featured_refresh_task is None:
             self.featured_refresh_task = asyncio.create_task(self._refresh_featured_wallpapers_periodically(ctx))
 
@@ -255,8 +280,40 @@ class UnsplashPlugin(Plugin):
             asyncio.create_task(self.refresh_featured_wallpaper_cache(_ctx))
         return None
 
-    async def query(self, ctx: Context, query: Query) -> list[Result]:
+    async def query(self, ctx: Context, query: Query) -> QueryResponse:
+        self.featured_query_ctx = None
+        refinements = []
+        if query.command.strip().lower() == "search":
+            modifier = "cmd" if platform.system() == "Darwin" else "ctrl"
+            for key, default, values, hotkey in (
+                ("orientation", "landscape", ("landscape", "portrait", "squarish"), "o"),
+                ("content_filter", "low", ("low", "high"), "h"),
+            ):
+                refinements.append(
+                    QueryRefinement(
+                        id=key,
+                        title=f"i18n:setting_{key}_label",
+                        type=QueryRefinementType.SINGLE_SELECT,
+                        hotkey=f"{modifier}+{hotkey}",
+                        default_value=[await self._choice_setting(ctx, key, default, set(values))],
+                        options=[QueryRefinementOption(value=value, title=f"i18n:{key}_{value}") for value in values],
+                    )
+                )
+        results = await self._query_results(ctx, query)
+        has_photos = any(result.preview and result.preview.preview_type == WoxPreviewType.IMAGE for result in results)
+        return QueryResponse(
+            results=results,
+            refinements=refinements,
+            layout=QueryLayout(grid_layout=QueryGridLayout(columns=4, item_margin=5, aspect_ratio=1.7777778) if has_photos else None),
+        )
+
+    async def _query_results(self, ctx: Context, query: Query) -> list[Result]:
         search_text = query.search.strip()
+        if query.query_hint:
+            for element in query.query_hint.elements:
+                if element.id == "keywords" and element.kind == "argument":
+                    search_text = element.value.strip()
+                    break
         access_key = (await self.api.get_setting(ctx, "access_key")).strip()
         if not access_key:
             return [await self._access_key_result(ctx)]
@@ -277,13 +334,7 @@ class UnsplashPlugin(Plugin):
             return [await self._localized_message_result(ctx, "result_search_title", "result_search_subtitle")]
 
         try:
-            photos = await self.client.search_photos(
-                access_key=access_key,
-                query=search_text,
-                per_page=await self._results_per_page(ctx),
-                orientation=await self._choice_setting(ctx, "orientation", "landscape", VALID_ORIENTATIONS),
-                content_filter=await self._choice_setting(ctx, "content_filter", "low", VALID_CONTENT_FILTERS),
-            )
+            photos = await self._search_photos(ctx, search_text, query.refinements)
         except UnsplashAPIError as error:
             return [await self._api_error_result(ctx, error)]
 
@@ -299,8 +350,108 @@ class UnsplashPlugin(Plugin):
 
         return [await self._photo_result(ctx, photo) for photo in photos]
 
+    async def _search_photos(self, ctx: Context, search_text: str, options: dict[str, Any]) -> list[dict[str, Any]]:
+        if not search_text.strip():
+            raise ValueError("Search keywords must not be empty")
+        access_key = (await self.api.get_setting(ctx, "access_key")).strip()
+        if not access_key:
+            raise ValueError("Unsplash Access Key is required")
+        choices = {}
+        for key, default, allowed in (
+            ("orientation", "landscape", VALID_ORIENTATIONS),
+            ("content_filter", "low", VALID_CONTENT_FILTERS),
+        ):
+            value = options.get(key, await self._choice_setting(ctx, key, default, allowed))
+            choices[key] = value if value in allowed else await self._choice_setting(ctx, key, default, allowed)
+        return await self.client.search_photos(
+            access_key=access_key,
+            query=search_text.strip(),
+            per_page=options.get("per_page", await self._results_per_page(ctx)),
+            **choices,
+        )
+
+    async def _register_tools(self, ctx: Context) -> None:
+        for name, properties, required, output, handler, read_only in (
+            (
+                "search_photos",
+                {
+                    "query": {"type": "string", "minLength": 1},
+                    "per_page": {"type": "integer", "minimum": 1, "maximum": 30},
+                    "orientation": {"type": "string", "enum": sorted(VALID_ORIENTATIONS)},
+                    "content_filter": {"type": "string", "enum": sorted(VALID_CONTENT_FILTERS)},
+                },
+                ["query"],
+                {"photos": {"type": "array", "items": {"type": "object"}}},
+                self._search_photos_tool,
+                True,
+            ),
+            (
+                "set_wallpaper",
+                {"photo_id": {"type": "string", "minLength": 1}},
+                ["photo_id"],
+                {"path": {"type": "string"}},
+                self._set_wallpaper_tool,
+                False,
+            ),
+        ):
+            result = await self.api.register_plugin_tool(
+                ctx,
+                RegisterPluginToolOption(
+                    tool=PluginToolDescriptor(
+                        name=name,
+                        description=f"i18n:tool_{name}_description",
+                        input_schema={"type": "object", "properties": properties, "required": required, "additionalProperties": False},
+                        output_schema={"type": "object", "properties": output, "required": list(output)},
+                        annotations=PluginToolAnnotations(read_only=read_only, destructive=False, idempotent=read_only, requires_ui=False),
+                    ),
+                    handler=handler,
+                ),
+            )
+            if result.error:
+                raise RuntimeError(f"Cannot register {name}: {result.error.message}")
+
+    async def _search_photos_tool(self, ctx: Context, option: InvokePluginToolHandlerOption) -> InvokePluginToolHandlerResult:
+        try:
+            photos = await self._search_photos(ctx, option.arguments["query"], option.arguments)
+            return InvokePluginToolHandlerResult(output={"photos": photos})
+        except (ValueError, UnsplashAPIError) as error:
+            return InvokePluginToolHandlerResult(error=PluginToolError(code="EXECUTION_FAILED", message=str(error)))
+
+    async def _set_wallpaper_tool(self, ctx: Context, option: InvokePluginToolHandlerOption) -> InvokePluginToolHandlerResult:
+        try:
+            photo_id = option.arguments["photo_id"]
+            if not photo_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for char in photo_id):
+                raise ValueError("Invalid Unsplash photo ID")
+            access_key = (await self.api.get_setting(ctx, "access_key")).strip()
+            if not access_key:
+                raise ValueError("Unsplash Access Key is required")
+            photo = await self.client.get_photo(access_key, photo_id)
+            image_path = await self._download_wallpaper(
+                ctx,
+                access_key,
+                photo_id,
+                self._dict(photo.get("urls")).get("full", ""),
+                self._dict(photo.get("links")).get("download_location", ""),
+            )
+            await asyncio.to_thread(self.wallpaper_setter, image_path)
+            return InvokePluginToolHandlerResult(output={"path": str(image_path)})
+        except Exception as error:
+            return InvokePluginToolHandlerResult(error=PluginToolError(code="EXECUTION_FAILED", message=str(error)))
+
     async def _cached_featured_wallpaper_results(self, ctx: Context) -> list[Result]:
+        self.featured_query_ctx = ctx
         if not self.latest_wallpapers and not self.popular_wallpapers:
+            if self.featured_error:
+                return [await self._api_error_result(ctx, self.featured_error)]
+            if self.featured_loaded:
+                return [
+                    await self._localized_message_result(
+                        ctx,
+                        "result_no_photos_found_title",
+                        "result_no_photos_found_subtitle",
+                        query="wallpapers",
+                    )
+                ]
             return [
                 await self._localized_message_result(
                     ctx,
@@ -340,18 +491,23 @@ class UnsplashPlugin(Plugin):
                 orientation=await self._choice_setting(ctx, "orientation", "landscape", VALID_ORIENTATIONS),
                 order_by="popular",
             )
-        except UnsplashAPIError:
-            return
-
-        if latest:
+        except UnsplashAPIError as error:
+            self.featured_error = error
+        else:
+            self.featured_error = None
+            self.featured_loaded = True
             self.latest_wallpapers = latest
-        if popular:
             self.popular_wallpapers = popular
+
+        query_ctx = self.featured_query_ctx
+        self.featured_query_ctx = None
+        if query_ctx is not None:
+            await self.api.refresh_query(query_ctx, RefreshQueryParam(preserve_selected_index=True))
 
     async def _refresh_featured_wallpapers_periodically(self, ctx: Context) -> None:
         while True:
             await self.refresh_featured_wallpaper_cache(ctx)
-            await asyncio.sleep(self.featured_refresh_interval_seconds)
+            await asyncio.sleep(60 if self.featured_error else self.featured_refresh_interval_seconds)
 
     async def _results_per_page(self, ctx: Context) -> int:
         raw = (await self.api.get_setting(ctx, "results_per_page")).strip()
@@ -425,8 +581,6 @@ class UnsplashPlugin(Plugin):
             await self.api.notify(ctx, await self._translation(ctx, "notify_photo_data_incomplete"))
             return
 
-        directory = await self._download_dir(ctx)
-        filename = f"{photo_id}.jpg"
         toolbar_msg_id = f"unsplash-wallpaper-{photo_id or 'current'}"
         try:
             await self._show_wallpaper_status(
@@ -436,8 +590,7 @@ class UnsplashPlugin(Plugin):
                 progress=10,
                 indeterminate=True,
             )
-            await self.client.track_download(access_key, download_location)
-            image_path = await self.downloader.download(access_key, full_url, directory, filename)
+            image_path = await self._download_wallpaper(ctx, access_key, photo_id, full_url, download_location)
             await self._show_wallpaper_status(
                 ctx,
                 toolbar_msg_id,
@@ -454,6 +607,20 @@ class UnsplashPlugin(Plugin):
 
         await self.api.clear_toolbar_msg(ctx, toolbar_msg_id)
         await self.api.notify(ctx, await self._translation(ctx, "notify_wallpaper_updated"))
+
+    async def _download_wallpaper(
+        self,
+        ctx: Context,
+        access_key: str,
+        photo_id: str,
+        full_url: str,
+        download_location: str,
+    ) -> Path:
+        if not full_url or not download_location:
+            raise ValueError("Unsplash photo data is incomplete")
+        await self.client.track_download(access_key, download_location)
+        image_path = await self.downloader.download(access_key, full_url, await self._download_dir(ctx), f"{photo_id}.jpg")
+        return image_path
 
     async def _show_wallpaper_status(
         self,
@@ -485,12 +652,10 @@ class UnsplashPlugin(Plugin):
         return Path(raw).expanduser() if raw else default_download_dir()
 
     async def _access_key_result(self, ctx: Context) -> Result:
-        preview = await self._translation(ctx, "result_access_key_preview")
         return Result(
             title="i18n:result_access_key_title",
             sub_title="i18n:result_access_key_subtitle",
             icon=WoxImage.new_relative("images/app.png"),
-            preview=WoxPreview(preview_type=WoxPreviewType.MARKDOWN, preview_data=preview),
             score=100,
         )
 
@@ -515,7 +680,6 @@ class UnsplashPlugin(Plugin):
             title=title,
             sub_title=subtitle,
             icon=WoxImage.new_relative("images/app.png"),
-            preview=WoxPreview(preview_type=WoxPreviewType.MARKDOWN, preview_data=subtitle),
             score=100,
         )
 

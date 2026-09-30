@@ -2,7 +2,7 @@
 
 DIST_DIR := dist
 SRC_DIR := src
-RUNTIME_DEPS := wox-plugin==0.0.73
+RUNTIME_DEPS := wox-plugin==0.0.89
 
 ifeq ($(OS),Windows_NT)
 SHELL := powershell.exe

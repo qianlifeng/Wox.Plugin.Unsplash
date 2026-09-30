@@ -4,6 +4,8 @@ Search Unsplash photos from Wox and set the selected image as your desktop wallp
 
 # Install
 
+Requires Wox 2.4.5 or later.
+
 ```
 wpm install Unsplash
 ```
@@ -28,6 +30,10 @@ Unsplash apps start in Demo mode, which has a low hourly request limit. If searc
 Type `unsplash` to show cached wallpapers from Unsplash's `wallpapers` topic. The first group shows the latest wallpapers, and the second group shows the most popular wallpapers. The plugin refreshes this cache in the background, so opening the default query does not call the Unsplash API directly.
 
 Use `unsplash search mountain`, `unsplash search ocean`, or another search term to search directly. Plain text after the trigger, such as `unsplash ocean`, does not search; use the `search` command.
+
+The `search` command offers an editable keyword hint. Search refinements let you change orientation (`Ctrl+O`, or `Cmd+O` on macOS) and content filtering (`Ctrl+H`, or `Cmd+H` on macOS) for the current query; plugin settings supply the defaults.
+
+Other plugins and Wox AI Chat can call `search_photos` with `query` and optional `per_page`, `orientation`, and `content_filter`, then call `set_wallpaper` with a returned `photo_id` (the photo's `id`). Both tools require the configured Access Key. Searching returns Unsplash photo metadata; setting wallpaper downloads the photo, tracks the download, changes the wallpaper, and returns its local `path` without opening launcher UI.
 
 Select a photo and run `Set as wallpaper`.
 

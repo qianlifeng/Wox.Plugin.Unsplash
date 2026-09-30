@@ -15,6 +15,17 @@ class TestManifestI18n(unittest.TestCase):
         self.assertEqual(self.manifest["Name"], "i18n:plugin_name")
         self.assertEqual(self.manifest["Description"], "i18n:plugin_description")
 
+    def test_new_capabilities_require_current_sdk_and_wox(self):
+        self.assertEqual(self.manifest["MinWoxVersion"], "2.4.5")
+        command = self.manifest["Commands"][0]
+        self.assertEqual(command["Command"], "search")
+        element = command["QueryHint"]["Elements"][0]
+        self.assertEqual(element["Id"], "keywords")
+        self.assertTrue(element["Required"])
+        self.assertNotIn("Tools", self.manifest)
+        for filename in ("pyproject.toml", "Makefile"):
+            self.assertIn("wox-plugin==0.0.89", (ROOT / filename).read_text(encoding="utf-8"))
+
     def test_manifest_contains_english_and_chinese_translations(self):
         i18n = self.manifest["I18n"]
         for locale in ("en_US", "zh_CN"):

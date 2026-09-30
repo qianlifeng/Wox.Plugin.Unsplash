@@ -5,7 +5,20 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, call, patch
 from urllib.error import HTTPError
 
-from wox_plugin import ActionContext, Context, PluginInitParams, Query, QueryEnv, QueryType, Selection, WoxImageType, WoxPreviewType
+from wox_plugin import (
+    ActionContext,
+    Context,
+    InvokePluginToolHandlerOption,
+    PluginInitParams,
+    Query,
+    QueryElement,
+    QueryEnv,
+    QueryHint,
+    QueryType,
+    Selection,
+    WoxImageType,
+    WoxPreviewType,
+)
 
 from src.main import UnsplashAPIError, UnsplashClient, UnsplashPlugin, set_wallpaper_for_platform
 
@@ -34,9 +47,17 @@ class FakeAPI:
         self.notifications = []
         self.toolbar_messages = []
         self.cleared_toolbar_messages = []
+        self.tools = {}
         self.commands = []
         self.changed_queries = []
+        self.refreshed_queries = []
         self.translations = dict(PLUGIN_I18N[locale])
+
+    async def register_plugin_tool(self, _ctx, option):
+        from wox_plugin import RegisterPluginToolResult
+
+        self.tools[option.tool.name] = option
+        return RegisterPluginToolResult()
 
     async def get_setting(self, _ctx, key):
         return self.settings.get(key, "")
@@ -58,6 +79,9 @@ class FakeAPI:
 
     async def change_query(self, _ctx, query):
         self.changed_queries.append(query)
+
+    async def refresh_query(self, ctx, param):
+        self.refreshed_queries.append((ctx, param))
 
     async def get_translation(self, _ctx, key):
         return self.translations.get(key, key)
@@ -142,6 +166,138 @@ def sample_photo():
 
 
 class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
+    async def test_featured_refresh_replaces_loading_and_reports_failures(self):
+        client = FakeUnsplashClient([sample_photo()])
+        plugin = UnsplashPlugin(client=client)
+        api = FakeAPI({"access_key": "key"})
+        ctx = Context.new()
+        await plugin.init(ctx, PluginInitParams(api=api, plugin_directory="."))
+        response = await plugin.query(ctx, make_query(""))
+        self.assertEqual(response.results[0].title, "Featured wallpapers are loading")
+        await plugin.refresh_featured_wallpaper_cache(ctx)
+        self.assertEqual(len(api.refreshed_queries), 1)
+        self.assertIs(api.refreshed_queries[0][0], ctx)
+        response = await plugin.query(ctx, make_query(""))
+        self.assertIsNotNone(response.layout.grid_layout)
+        client.photos = []
+        await plugin.refresh_featured_wallpaper_cache(ctx)
+        response = await plugin.query(ctx, make_query(""))
+        self.assertEqual(response.results[0].title, "No Unsplash photos found")
+        client.topic_photos = AsyncMock(side_effect=UnsplashAPIError(401, "Unauthorized"))
+        await plugin.refresh_featured_wallpaper_cache(ctx)
+        response = await plugin.query(ctx, make_query(""))
+        self.assertIn("invalid", response.results[0].sub_title)
+        self.assertIsNone(response.layout.grid_layout)
+        self.assertEqual(response.results[0].preview.preview_data, "")
+        client.topic_photos = AsyncMock(return_value=[sample_photo()])
+        await plugin.refresh_featured_wallpaper_cache(ctx)
+        self.assertIsNone(plugin.featured_error)
+        response = await plugin.query(ctx, make_query(""))
+        self.assertIsNotNone(response.layout.grid_layout)
+        await plugin.query(ctx, make_command_query("search", "ocean"))
+        count = len(api.refreshed_queries)
+        await plugin.refresh_featured_wallpaper_cache(ctx)
+        self.assertEqual(len(api.refreshed_queries), count)
+
+    async def test_only_photo_results_use_grid_layout(self):
+        client = FakeUnsplashClient([sample_photo()])
+        plugin = UnsplashPlugin(client=client)
+        api = FakeAPI({"access_key": "key"})
+        ctx = Context.new()
+        await plugin.init(ctx, PluginInitParams(api=api, plugin_directory="."))
+        response = await plugin.query(ctx, make_command_query("search", "ocean"))
+        self.assertIsNotNone(response.layout.grid_layout)
+        client.photos = []
+        for query in (make_command_query("search", "ocean"), make_command_query("search", ""), make_query("su"), make_query("")):
+            with self.subTest(query=query.raw_query):
+                response = await plugin.query(ctx, query)
+                self.assertTrue(response.results[0].title)
+                self.assertEqual(response.results[0].preview.preview_data, "")
+                self.assertIsNone(response.layout.grid_layout)
+                self.assertNotIn("GridLayout", json.loads(response.to_json())["Layout"])
+        client.search_photos = AsyncMock(side_effect=UnsplashAPIError(429, "Rate limited"))
+        response = await plugin.query(ctx, make_command_query("search", "ocean"))
+        self.assertIsNone(response.layout.grid_layout)
+        self.assertEqual(response.results[0].preview.preview_data, "")
+        api.settings["access_key"] = ""
+        response = await plugin.query(ctx, make_query(""))
+        self.assertIsNone(response.layout.grid_layout)
+        self.assertEqual(response.results[0].preview.preview_data, "")
+        api.settings["access_key"] = "key"
+        plugin.latest_wallpapers = [sample_photo()]
+        response = await plugin.query(ctx, make_query(""))
+        self.assertIsNotNone(response.layout.grid_layout)
+
+    async def test_query_hints_and_refinements_preserve_legacy_search(self):
+        client = FakeUnsplashClient([sample_photo()])
+        plugin = UnsplashPlugin(client=client)
+        await plugin.init(Context.new(), PluginInitParams(api=FakeAPI({"access_key": "key"}), plugin_directory="."))
+        query = make_command_query("search", "legacy text")
+        query.query_hint = QueryHint(elements=[QueryElement(id="keywords", kind="argument", value="  blue sky  ")])
+        query.refinements = {"orientation": "portrait", "content_filter": "high"}
+        for system, modifier in (("Darwin", "cmd"), ("Windows", "ctrl"), ("Linux", "ctrl")):
+            with patch("src.main.platform.system", return_value=system):
+                response = await plugin.query(Context.new(), query)
+            self.assertEqual(client.search_calls[-1]["query"], "blue sky")
+            self.assertEqual(client.search_calls[-1]["orientation"], "portrait")
+            self.assertEqual(client.search_calls[-1]["content_filter"], "high")
+            self.assertEqual([r.hotkey for r in response.refinements], [f"{modifier}+o", f"{modifier}+h"])
+            self.assertEqual(response.layout.grid_layout.columns, 4)
+            self.assertEqual(json.loads(response.to_json())["Results"][0]["Id"], "photo-1")
+        query.query_hint.elements[0].value = "   "
+        calls = len(client.search_calls)
+        await plugin.query(Context.new(), query)
+        self.assertEqual(len(client.search_calls), calls)
+        query.query_hint = None
+        query.refinements = {"orientation": "invalid", "content_filter": "invalid"}
+        await plugin.query(Context.new(), query)
+        self.assertEqual(client.search_calls[-1]["query"], "legacy text")
+        self.assertEqual(client.search_calls[-1]["orientation"], "landscape")
+        self.assertEqual(client.search_calls[-1]["content_filter"], "low")
+
+    async def test_tools_share_search_and_wallpaper_operations_without_launcher_ui(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            client = FakeUnsplashClient([sample_photo()])
+            client.get_photo = AsyncMock(return_value=sample_photo())
+            downloader = FakeDownloader(Path(temp_dir) / "photo-1.jpg")
+            wallpaper = Mock()
+            api = FakeAPI({"access_key": "key", "download_dir": temp_dir})
+            plugin = UnsplashPlugin(client=client, downloader=downloader, wallpaper_setter=wallpaper)
+            ctx = Context.new()
+            await plugin.init(ctx, PluginInitParams(api=api, plugin_directory="."))
+            self.assertEqual(set(api.tools), {"search_photos", "set_wallpaper"})
+            search = api.tools["search_photos"]
+            result = await search.handler(ctx, InvokePluginToolHandlerOption(arguments={"query": "ocean", "per_page": 3}))
+            self.assertEqual(result.output["photos"][0]["id"], "photo-1")
+            self.assertEqual(client.search_calls[-1]["per_page"], 3)
+            self.assertTrue(search.tool.annotations.read_only)
+            tool = api.tools["set_wallpaper"]
+            result = await tool.handler(ctx, InvokePluginToolHandlerOption(arguments={"photo_id": "photo-1"}))
+            self.assertIsNone(result.error)
+            self.assertEqual(result.output, {"path": str(downloader.output_path)})
+            client.get_photo.assert_awaited_once_with("key", "photo-1")
+            self.assertEqual(client.tracked, [("key", sample_photo()["links"]["download_location"])])
+            wallpaper.assert_called_once_with(downloader.output_path)
+            self.assertFalse(tool.tool.annotations.read_only)
+            self.assertEqual(api.notifications + api.toolbar_messages + api.changed_queries, [])
+            for photo_id in ("", "../outside", "a/b"):
+                result = await tool.handler(ctx, InvokePluginToolHandlerOption(arguments={"photo_id": photo_id}))
+                self.assertEqual(result.error.code, "EXECUTION_FAILED")
+            self.assertEqual(client.get_photo.await_count, 1)
+            for arguments in ({"query": " "}, {"query": "ocean"}):
+                api.settings["access_key"] = ""
+                result = await search.handler(ctx, InvokePluginToolHandlerOption(arguments=arguments))
+                self.assertIsNone(result.output)
+                self.assertEqual(result.error.code, "EXECUTION_FAILED")
+            api.settings["access_key"] = "key"
+            client.search_photos = AsyncMock(side_effect=UnsplashAPIError(429, "Rate limited"))
+            result = await search.handler(ctx, InvokePluginToolHandlerOption(arguments={"query": "ocean"}))
+            self.assertEqual(result.error.message, "Rate limited")
+            wallpaper.side_effect = RuntimeError("Wallpaper failed")
+            result = await tool.handler(ctx, InvokePluginToolHandlerOption(arguments={"photo_id": "photo-1"}))
+            self.assertIsNone(result.output)
+            self.assertEqual(result.error.message, "Wallpaper failed")
+
     async def test_init_does_not_register_visible_query_commands(self):
         plugin = UnsplashPlugin(client=FakeUnsplashClient())
         api = FakeAPI()
@@ -155,7 +311,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
         api = FakeAPI()
         await plugin.init(Context.new(), PluginInitParams(api=api, plugin_directory="."))
 
-        results = await plugin.query(Context.new(), make_query(""))
+        results = (await plugin.query(Context.new(), make_query(""))).results
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].title, "i18n:result_access_key_title")
@@ -173,7 +329,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
         await plugin.init(Context.new(), PluginInitParams(api=api, plugin_directory="."))
         await plugin.refresh_featured_wallpaper_cache(Context.new())
 
-        results = await plugin.query(Context.new(), make_query(""))
+        results = (await plugin.query(Context.new(), make_query(""))).results
 
         self.assertEqual([result.id for result in results], ["latest-photo", "popular-photo"])
         self.assertEqual(results[0].group, "i18n:group_latest_wallpapers")
@@ -205,7 +361,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
         api = FakeAPI({"access_key": "abc123"})
         await plugin.init(Context.new(), PluginInitParams(api=api, plugin_directory="."))
 
-        results = await plugin.query(Context.new(), make_query(""))
+        results = (await plugin.query(Context.new(), make_query(""))).results
 
         self.assertEqual(client.search_calls, [])
         self.assertEqual(client.topic_calls, [])
@@ -235,7 +391,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
                     "per_page": 8,
                     "orientation": "landscape",
                     "order_by": "popular",
-                }
+                },
             ],
         )
 
@@ -244,12 +400,12 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
         api = FakeAPI()
         await plugin.init(Context.new(), PluginInitParams(api=api, plugin_directory="."))
 
-        results = await plugin.query(Context.new(), make_command_query("search", "forest"))
+        results = (await plugin.query(Context.new(), make_command_query("search", "forest"))).results
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].title, "i18n:result_access_key_title")
         self.assertEqual(results[0].sub_title, "i18n:result_access_key_subtitle")
-        self.assertIn("https://unsplash.com/developers", results[0].preview.preview_data)
+        self.assertEqual(results[0].preview.preview_data, "")
 
     async def test_search_request_settings_are_passed_to_unsplash_client(self):
         client = FakeUnsplashClient([sample_photo()])
@@ -284,7 +440,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
         api = FakeAPI({"access_key": "abc123", "results_per_page": "12"})
         await plugin.init(Context.new(), PluginInitParams(api=api, plugin_directory="."))
 
-        results = await plugin.query(Context.new(), make_command_query("search", "mountains"))
+        results = (await plugin.query(Context.new(), make_command_query("search", "mountains"))).results
 
         self.assertEqual(len(results), 1)
         result = results[0]
@@ -306,7 +462,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
             api = FakeAPI({"access_key": "bad-key"})
             await plugin.init(Context.new(), PluginInitParams(api=api, plugin_directory="."))
 
-            results = await plugin.query(Context.new(), make_command_query("search", "city"))
+            results = (await plugin.query(Context.new(), make_command_query("search", "city"))).results
 
             self.assertIn(expected, results[0].sub_title.lower())
 
@@ -315,7 +471,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
         api = FakeAPI({"access_key": "abc123"}, locale="zh_CN")
         await plugin.init(Context.new(), PluginInitParams(api=api, plugin_directory="."))
 
-        results = await plugin.query(Context.new(), make_command_query("search", "海边"))
+        results = (await plugin.query(Context.new(), make_command_query("search", "海边"))).results
 
         self.assertEqual(results[0].title, "未找到 Unsplash 图片")
         self.assertEqual(results[0].sub_title, "没有找到“海边”的相关结果。")
@@ -326,7 +482,7 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
         api = FakeAPI({"access_key": "abc123"})
         await plugin.init(Context.new(), PluginInitParams(api=api, plugin_directory="."))
 
-        results = await plugin.query(Context.new(), make_query("ocean"))
+        results = (await plugin.query(Context.new(), make_query("ocean"))).results
 
         self.assertEqual(client.search_calls, [])
         self.assertEqual(results[0].sub_title, "Type unsplash search ocean to search Unsplash wallpapers.")
@@ -368,6 +524,12 @@ class TestUnsplashPlugin(unittest.IsolatedAsyncioTestCase):
 
 
 class TestUnsplashClient(unittest.IsolatedAsyncioTestCase):
+    async def test_get_photo_uses_official_endpoint(self):
+        opener = Mock(return_value=FakeResponse(json.dumps(sample_photo()).encode()))
+        photo = await UnsplashClient(opener=opener).get_photo("key", "photo-1")
+        self.assertEqual(photo["id"], "photo-1")
+        self.assertEqual(opener.call_args.args[0].full_url, "https://api.unsplash.com/photos/photo-1")
+
     async def test_search_photos_builds_official_request_shape(self):
         captured = {}
 
@@ -463,9 +625,11 @@ class TestWallpaperPlatforms(unittest.TestCase):
             self.assertIn("/tmp/photo.jpg", command[-1])
 
     def test_linux_gnome_wallpaper_uses_gsettings(self):
-        with patch("src.main.platform.system", return_value="Linux"), patch.dict(
-            "src.main.os.environ", {"XDG_CURRENT_DESKTOP": "GNOME"}
-        ), patch("src.main.subprocess.run") as run:
+        with (
+            patch("src.main.platform.system", return_value="Linux"),
+            patch.dict("src.main.os.environ", {"XDG_CURRENT_DESKTOP": "GNOME"}),
+            patch("src.main.subprocess.run") as run,
+        ):
             set_wallpaper_for_platform(Path("/tmp/photo.jpg"))
 
             self.assertEqual(run.call_args.args[0][0], "gsettings")
